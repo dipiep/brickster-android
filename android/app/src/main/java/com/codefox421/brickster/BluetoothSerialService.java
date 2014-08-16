@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -319,6 +320,7 @@ public class BluetoothSerialService {
         private final BluetoothSocket mmSocket;
         private final InputStream mmInStream;
         private final OutputStream mmOutStream;
+        private final Semaphore mmSemaphore = new Semaphore(1, true);
         
 
         public ConnectedThread(BluetoothSocket socket) {
@@ -350,6 +352,9 @@ public class BluetoothSerialService {
                     // Read from the InputStream
                     bytes = mmInStream.read(buffer);
 
+                    if (bytes > 0)
+                        mmSemaphore.release();
+
 //                    mEmulatorView.write(buffer, bytes);
                     
                     // Send the obtained bytes to the UI Activity
@@ -371,6 +376,7 @@ public class BluetoothSerialService {
          */
         public void write(byte[] buffer) {
             try {
+                mmSemaphore.acquireUninterruptibly();
                 mmOutStream.write(buffer);
 
                 // Share the sent message back to the UI Activity
