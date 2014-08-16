@@ -27,9 +27,9 @@
     <item android:id="@+id/preferences"
           android:icon="@android:drawable/ic_menu_preferences"
           android:title="@string/preferences" />
-    <item android:id="@+id/menu_special_keys"
+    <item android:id="@+id/menu_special_ui"
           android:icon="@android:drawable/ic_menu_info_details"
-    	  android:title="@string/special_keys" />
+    	  android:title="@string/special_ui" />
               
 </menu>
 

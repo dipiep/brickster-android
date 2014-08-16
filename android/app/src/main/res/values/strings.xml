@@ -28,7 +28,7 @@
     <string name="connect">Connect device</string>
     <string name="disconnect">Disconnect devices</string>
     <string name="preferences">Preferences</string>    
-    <string name="special_keys">Special keys</string>
+    <string name="special_ui">Steering Wheel</string>
     
     <!-- Preference dialog -->
     <string name="general_preferences">General</string>

@@ -5,6 +5,10 @@ import java.util.ArrayList;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -29,6 +33,8 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.CompoundButton.OnCheckedChangeListener;
+import android.widget.RadioButton;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import android.bluetooth.BluetoothAdapter;
@@ -192,6 +198,10 @@ public class BricksTer extends Activity {
 		}
 	};
 
+    private SensorManager mSensorManager;
+    private Sensor mAccelerometer;
+    private SensorEventListener mAccelerometerListener;
+
     
 	/** Called when the activity is first created. */
 	@Override
@@ -229,6 +239,9 @@ public class BricksTer extends Activity {
 //        mEmulatorView.setFocusableInTouchMode(true);
 //        mEmulatorView.requestFocus();
 //        mEmulatorView.register(mKeyListener);
+
+        mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        mAccelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 		
 		// Set up the window layout
 		setupMomentaryGui();
@@ -255,6 +268,8 @@ public class BricksTer extends Activity {
 		if (DEBUG) {
 			Log.e(LOG_TAG, "+ ON RESUME +");
 		}
+
+        startSensorListening();
 		
 		if (!mEnablingBT) { // If we are turning on the BT we cannot check if it's enable
 		    if ( (mBluetoothAdapter != null)  && (!mBluetoothAdapter.isEnabled()) ) {
@@ -306,6 +321,7 @@ public class BricksTer extends Activity {
 		if (DEBUG)
 			Log.e(LOG_TAG, "- ON PAUSE -");
 
+        stopSensorListening(false);
 //		if (mEmulatorView != null) {
 //			mInputManager.hideSoftInputFromWindow(mEmulatorView.getWindowToken(), 0);
 //			mEmulatorView.onPause();
@@ -349,6 +365,8 @@ public class BricksTer extends Activity {
 //	}
 	
 	private void setupMomentaryGui() {
+        stopSensorListening(true);
+
 		CharSequence oldTitle = (mTitle != null ? mTitle.getText() : "");
 		boolean oldRedFlip = (mConnectedDevicePrefs != null && 
 				mConnectedDevicePrefs.getBoolean(Integer.valueOf(R.id.check_red_flip).toString(), false)) ||
@@ -498,6 +516,8 @@ public class BricksTer extends Activity {
 	}
 	
 	private void setupSpeedGui() {
+        stopSensorListening(true);
+
 		CharSequence oldTitle = (mTitle != null ? mTitle.getText() : "");
 		boolean oldRedFlip = (mConnectedDevicePrefs != null && 
 				mConnectedDevicePrefs.getBoolean(Integer.valueOf(R.id.check_red_flip).toString(), false)) ||
@@ -753,6 +773,180 @@ public class BricksTer extends Activity {
 			}
 		});
 	}
+
+    private void setupSteeringGui() {
+        CharSequence oldTitle = (mTitle != null ? mTitle.getText() : "");
+        boolean oldRedFlip = (mConnectedDevicePrefs != null &&
+                mConnectedDevicePrefs.getBoolean(Integer.valueOf(R.id.check_red_flip).toString(), false)) ||
+                (mRedFlip != null && mRedFlip.isChecked());
+        boolean oldBlueFlip = (mConnectedDevicePrefs != null &&
+                mConnectedDevicePrefs.getBoolean(Integer.valueOf(R.id.check_blue_flip).toString(), false)) ||
+                (mBlueFlip != null && mBlueFlip.isChecked());
+        // Set up the window layout
+        mCurrentGui = R.layout.steering;
+        setContentView(mCurrentGui);
+        mTitle = (TextView) findViewById(R.id.title_right_text);
+        mTitle.setText(oldTitle);
+
+		/* Motor reverse buttons */
+        // Red flip
+        mRedFlip = new CheckBox(getApplicationContext());
+        mRedFlip.setChecked(oldRedFlip);
+        // Blue flip
+        mBlueFlip = new CheckBox(getApplicationContext());
+        mBlueFlip.setChecked(oldBlueFlip);
+
+        /* Settings buttons */
+        final RadioButton redSteering = (RadioButton) findViewById(R.id.radio_steering_red);
+        final RadioButton blueSteering = (RadioButton) findViewById(R.id.radio_steering_blue);
+        final CheckBox reverseDrive = (CheckBox) findViewById(R.id.reverse_drive);
+
+        /* Throttle Seekbars */
+        final SeekBar throttle = (SeekBar) findViewById(R.id.throttle);
+        final SeekBar throttleReversed = (SeekBar) findViewById(R.id.throttle_reversed);
+        throttle.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            private boolean isTouched = false;
+
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (isTouched) {
+                    throttleReversed.setProgress(seekBar.getMax() - progress);
+                    progress = (progress - 28) * (reverseDrive.isChecked() ? -1 : 1);
+//                    mTitle.setText(Integer.toString(progress));
+                    byte[] data = new byte[1];
+                    data[0] = (byte) 0x80; // set mode
+                    if (blueSteering.isChecked()) {
+                        data[0] &= (byte) ~0x40; // set output-channel to red
+                    } else {
+                        data[0] |= (byte) 0x40; // set output-channel to blue
+                    }
+                    if (progress >= 0) {
+                        data[0] |= (byte) progress;
+                    } else {
+                        data[0] |= (byte)(63 + progress);
+                    }
+//                    mTitle.setText(Integer.toBinaryString(data[0]).substring(24));
+                    for (BluetoothSerialService mSerialService : mSerialServices)
+                        mSerialService.write(data);
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                isTouched = true;
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                seekBar.setProgress(seekBar.getMax() / 2);
+                isTouched = false;
+            }
+        });
+        throttleReversed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            private boolean isTouched = false;
+
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (isTouched) {
+                    throttle.setProgress(seekBar.getMax() - progress);
+                    progress = (28 - progress) * (reverseDrive.isChecked() ? -1 : 1);
+//                    mTitle.setText(Integer.toString(progress));
+                    byte[] data = new byte[1];
+                    data[0] = (byte) 0x80; // set mode
+                    if (blueSteering.isChecked()) {
+                        data[0] &= (byte) ~0x40; // set output-channel to red
+                    } else {
+                        data[0] |= (byte) 0x40; // set output-channel to blue
+                    }
+                    if (progress >= 0) {
+                        data[0] |= (byte) progress;
+                    } else {
+                        data[0] |= (byte)(63 + progress);
+                    }
+//                    mTitle.setText(Integer.toBinaryString(data[0]).substring(24));
+                    for (BluetoothSerialService mSerialService : mSerialServices)
+                        mSerialService.write(data);
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+                isTouched = true;
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                seekBar.setProgress(seekBar.getMax() / 2);
+                isTouched = false;
+            }
+        });
+
+        /* Accelerometer sensor */
+        stopSensorListening(true);
+        mAccelerometerListener = new SensorEventListener() {
+            private Byte lastValue;
+
+            @Override
+            public void onSensorChanged(SensorEvent sensorEvent) {
+                /*
+                 * event.values[0]: azimuth, rotation around the Z axis. -- portrait = 0
+                 * event.values[1]: pitch, rotation around the X axis. -- landscape = 0
+                 * event.values[2]: roll, rotation around the Y axis. -- don't use
+                 */
+
+                float azimuth = sensorEvent.values[0]; // use this one for portrait = 0
+                float pitch = sensorEvent.values[1]; // use this one for landscape = 0
+                float roll = sensorEvent.values[2];
+
+//                if (Math.round((pitch - 1)/Math.abs(pitch - 1)) != Math.round(pitch/Math.abs(pitch)))
+//                    return;
+                int progress = Math.min(28, Math.max(-28, Math.round(pitch * 3)));
+//                mTitle.setText(Integer.toString(progress));
+
+                byte[] data = new byte[1];
+                data[0] = (byte) 0x80; // set mode
+                if (redSteering.isChecked()) {
+                    data[0] &= (byte) ~0x40; // set output-channel to red
+                } else {
+                    data[0] |= (byte) 0x40; // set output-channel to blue
+                }
+                if (progress >= 0) {
+                    data[0] |= (byte) progress;
+                } else {
+                    data[0] |= (byte)(63 + progress);
+                }
+//                mTitle.setText(Integer.toBinaryString(data[0]).substring(24));
+
+                if (lastValue == null || !lastValue.equals(data[0])) {
+                    lastValue = data[0];
+                    for (BluetoothSerialService mSerialService : mSerialServices)
+                        mSerialService.write(data);
+                }
+            }
+
+            @Override
+            public void onAccuracyChanged(Sensor sensor, int i) {
+
+            }
+        };
+        startSensorListening();
+    }
+
+    private void startSensorListening() {
+        if (mAccelerometerListener != null) {
+            mSensorManager.registerListener(mAccelerometerListener,
+                    mAccelerometer,
+                    SensorManager.SENSOR_DELAY_NORMAL);
+        }
+    }
+
+    private void stopSensorListening(boolean clearListener) {
+        if (mAccelerometerListener != null) {
+            mSensorManager.unregisterListener(mAccelerometerListener);
+        }
+        if (clearListener)
+            mAccelerometerListener = null;
+    }
 
 	
 	private void readPrefs() {
@@ -1117,8 +1311,8 @@ public class BricksTer extends Activity {
         case R.id.preferences:
         	doPreferences();
             return true;
-        case R.id.menu_special_keys:
-            doDocumentKeys();
+        case R.id.menu_special_ui:
+            setupSteeringGui();
             return true;
         }
         return false;
