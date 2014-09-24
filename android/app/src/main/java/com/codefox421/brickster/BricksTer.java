@@ -917,7 +917,8 @@ public class BricksTer extends Activity {
                 }
 //                mTitle.setText(Integer.toBinaryString(data[0]).substring(24));
 
-                if (lastValue == null || !lastValue.equals(data[0])) {
+                if (lastValue == null || data[0] > lastValue.byteValue() + 3 || data[0] < lastValue.byteValue() - 3) {
+                    data[0] &= ~0x03;
                     lastValue = data[0];
                     for (BluetoothSerialService mSerialService : mSerialServices)
                         mSerialService.write(data);
